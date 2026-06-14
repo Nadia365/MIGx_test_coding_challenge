@@ -1,0 +1,4 @@
+nct_id,title,phase,condition,start_date,completion_date,intervention,location
+NCT0001,Trial A,Phase 1,Condition X,2020-01-01,2021-06-01,Drug A,USA
+NCT0002,Trial B,Phase 2,Condition Y,2019-05-10,2020-12-31,Drug B,UK
+NCT0003,Trial C,Phase 3,Condition X,2021-03-15,2022-11-20,Drug A,USA
