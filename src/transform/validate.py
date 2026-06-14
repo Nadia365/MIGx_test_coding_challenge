@@ -12,6 +12,30 @@ NCT_PATTERN = re.compile(r"^NCT\d{8}$")
 QUARANTINE_FILE = QUARANTINE_DIR / "rejected_studies.csv"
 
 
+def filter_child_rows(record: dict) -> dict:
+    """
+    Drop empty child rows (conditions/interventions/locations with no useful data).
+    """
+    conditions = [
+        c for c in record.get("conditions", [])
+        if (c.get("condition_name") or "").strip()
+    ]
+    interventions = [
+        i for i in record.get("interventions", [])
+        if (i.get("intervention_name") or "").strip()
+    ]
+    locations = [
+        loc for loc in record.get("locations", [])
+        if any(loc.get(k) for k in ("country", "city", "state"))
+    ]
+    return {
+        **record,
+        "conditions": conditions,
+        "interventions": interventions,
+        "locations": locations,
+    }
+
+
 def validate_record(record: dict) -> tuple[bool, str]:
     """Check one record. Returns (is_valid, rejection_reason)."""
     study = record.get("study", {})
@@ -25,6 +49,11 @@ def validate_record(record: dict) -> tuple[bool, str]:
     if not title:
         return False, "missing title"
 
+    start = study.get("start_date")
+    completion = study.get("completion_date")
+    if start and completion and start > completion:
+        return False, "start_date after completion_date"
+
     return True, ""
 
 
@@ -37,16 +66,25 @@ def validate_records(records: list[dict]) -> tuple[list[dict], list[dict]]:
     invalid: list[dict] = []
 
     for record in records:
-        ok, reason = validate_record(record)
-        nct_id = record["study"].get("nct_id", "")
+        sanitized = filter_child_rows(record)
+        ok, reason = validate_record(sanitized)
+        nct_id = sanitized["study"].get("nct_id", "")
 
         if not ok:
-            invalid.append({**record, "rejection_reason": reason})
+            invalid.append({**sanitized, "rejection_reason": reason})
             continue
 
-        valid_by_id[nct_id] = record
+        valid_by_id[nct_id] = sanitized
 
     return list(valid_by_id.values()), invalid
+
+
+def make_parse_error(source_file: str, message: str = "xml_parse_error") -> dict:
+    """Build a quarantine row for a file that failed XML parsing."""
+    return {
+        "study": {"nct_id": "", "title": "", "source_file": source_file},
+        "rejection_reason": message,
+    }
 
 
 def write_quarantine(invalid_records: list[dict]) -> Path | None:

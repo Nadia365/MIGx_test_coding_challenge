@@ -2,7 +2,7 @@
 
 Junior-level prototype for the **DE Technical Challenge**.
 
-**Status:** Phases 0–2 complete (exploration, schema, ETL). Phase 3 (multi-source) is next.
+**Status:** Phases 0–2 complete (exploration, schema, ETL). Phase 5 validation & tests **Done**. Phase 3 (multi-source) is next.
 
 **Primary dataset:** [Option 2 — All Clinical Trials (Kaggle)](https://www.kaggle.com/datasets/skylord/all-clinical-trials)
 
@@ -41,7 +41,7 @@ pytest -q
 | 1 | Schema design | **Done** |
 | 2 | ETL (parse, clean, load) | **Done** |
 | 3 | Multi-source (CSV, API, SQL) | Planned |
-| 4 | Validation & tests | Planned |
+| 4 | Validation & tests | **Done** |
 | 5 | Analytics SQL | Planned |
 | 6 | Docker & submission | Planned |
 
@@ -114,6 +114,32 @@ XML (zip or fixtures)  →  Extract  →  Clean  →  Validate  →  Load  →  
 | Empty phase | Map to `Unknown` |
 | Bad/missing dates | Set NULL |
 | Duplicate `nct_id` | Keep latest |
+| `start_date` after `completion_date` | Reject → quarantine |
+| Malformed XML | Reject → quarantine (parse error) |
+| Empty condition/intervention/location | Skip child row only |
+
+---
+
+## Phase 5: Validation & tests (completed)
+
+Validation rules live in `src/transform/validate.py`. Rejected rows go to `data/quarantine/rejected_studies.csv`.
+
+### Test suite
+
+```bash
+pytest -q   # 19 tests
+```
+
+| Test file | What it covers |
+|-----------|----------------|
+| `test_schema.py` | Tables created correctly |
+| `test_xml_parser.py` | XML field extraction |
+| `test_xml_ingest.py` | Folder/zip read + parse error handling |
+| `test_clean.py` | Date/phase/enrollment cleaning |
+| `test_validate.py` | Rules, quarantine CSV, child row filtering |
+| `test_pipeline.py` | End-to-end ETL + quarantine integration |
+
+Bad-data fixtures for validation tests: `tests/fixtures_validation/` (malformed XML, missing title, bad NCT ID, reversed dates).
 
 ---
 
@@ -139,8 +165,11 @@ src/
     connection.py
 tests/
   fixtures/
+  fixtures_validation/   # bad XML for validation tests
+  conftest.py
   test_schema.py
   test_xml_parser.py
+  test_xml_ingest.py
   test_clean.py
   test_validate.py
   test_pipeline.py

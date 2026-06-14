@@ -188,6 +188,49 @@ When reloading a study, conditions/interventions may change. Delete + insert kee
 
 ---
 
+## Phase 5: Validation & tests (DONE)
+
+### What we implemented
+
+| File | Purpose |
+|------|---------|
+| `src/transform/validate.py` | Rules, child-row filtering, quarantine CSV |
+| `src/transform/clean.py` | Logging for unparseable dates/enrollment |
+| `src/ingest/xml_ingest.py` | Catch malformed XML → parse-error quarantine |
+| `tests/fixtures_validation/` | Bad XML files for edge-case tests |
+| `tests/conftest.py` | Temp quarantine dir for tests |
+| `tests/test_xml_ingest.py` | Extract + parse error tests |
+| `tests/test_validate.py` | Full validation rule coverage |
+
+### Validation rules
+
+| Rule | Action |
+|------|--------|
+| Missing `nct_id` or `title` | Reject → quarantine |
+| Invalid `nct_id` format | Reject |
+| `start_date` after `completion_date` | Reject |
+| Malformed XML | Reject → quarantine |
+| Unparseable dates | Set NULL + log warning |
+| Empty phase | Map to `Unknown` (in clean step) |
+| Duplicate `nct_id` | Keep latest |
+| Empty child rows | Skip row only |
+
+### Run tests
+
+```bash
+pytest -q   # 19 tests
+```
+
+### Interview Q&A: Phase 5
+
+**"Why quarantine instead of silent skip?"**  
+Silent `except: continue` hides data loss. Writing rejects to CSV lets you inspect and fix bad source files.
+
+**"Why test on fixtures, not the full 103k archive?"**  
+Unit tests must be fast and deterministic. Four small bad XML files prove validation logic without reading the zip.
+
+---
+
 ## Phase 3: Multi-source (NEXT)
 
 | Phase | Key files | Junior-level approach |
@@ -250,6 +293,6 @@ All three feed the same normalized schema (ELT pattern).
 Run Phase 3: add CSV, API, and SQL connectors that feed the same pipeline.
 
 ```bash
-python -m src.run_pipeline --max-studies 500
 pytest -q
+python -m src.run_pipeline --max-studies 500
 ```

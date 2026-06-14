@@ -24,8 +24,12 @@ def print_summary(result: dict) -> None:
     print(f"Extracted:  {result['extracted']}")
     print(f"Valid:      {result['valid']}")
     print(f"Rejected:   {result['rejected']}")
+    if result.get("parse_errors"):
+        print(f"Parse errs: {result['parse_errors']}")
     if result.get("quarantine_file"):
         print(f"Quarantine: {result['quarantine_file']}")
+    if result.get("elapsed_seconds") is not None:
+        print(f"Elapsed:    {result['elapsed_seconds']}s")
     print("\nLoaded rows:")
     for table, count in result["loaded"].items():
         print(f"  {table}: {count}")

@@ -2,8 +2,11 @@
 Clean and normalize parsed study records before validation and load.
 """
 
+import logging
 import re
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 MONTHS = {
     "january": 1,
@@ -28,7 +31,7 @@ def clean_phase(phase: str | None) -> str:
     return str(phase).strip()
 
 
-def clean_date(raw: str | None) -> str | None:
+def clean_date(raw: str | None, field_name: str = "date") -> str | None:
     """
     Normalize messy XML date strings to ISO YYYY-MM-DD.
     Returns None when the value is missing or unparseable.
@@ -63,6 +66,7 @@ def clean_date(raw: str | None) -> str | None:
         except ValueError:
             continue
 
+    logger.warning("Unparseable %s %r — setting NULL", field_name, text)
     return None
 
 
@@ -72,6 +76,7 @@ def _clean_enrollment(value) -> int | None:
     try:
         return int(str(value).strip())
     except ValueError:
+        logger.warning("Unparseable enrollment %r — setting NULL", value)
         return None
 
 
@@ -79,8 +84,8 @@ def clean_record(record: dict) -> dict:
     """Return a copy of the record with cleaned study fields."""
     study = dict(record["study"])
     study["phase"] = clean_phase(study.get("phase"))
-    study["start_date"] = clean_date(study.get("start_date"))
-    study["completion_date"] = clean_date(study.get("completion_date"))
+    study["start_date"] = clean_date(study.get("start_date"), field_name="start_date")
+    study["completion_date"] = clean_date(study.get("completion_date"), field_name="completion_date")
     study["enrollment"] = _clean_enrollment(study.get("enrollment"))
 
     return {
