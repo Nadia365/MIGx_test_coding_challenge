@@ -13,5 +13,6 @@ FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 DATA_DIR = REPO_ROOT / "data" / "processed"
 DB_PATH = DATA_DIR / "trials.db"
 SCHEMA_PATH = REPO_ROOT / "src" / "db" / "schema.sql"
+QUARANTINE_DIR = REPO_ROOT / "data" / "quarantine"
 
 MAX_STUDIES = int(os.environ.get("MAX_STUDIES", "500"))

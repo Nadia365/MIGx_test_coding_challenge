@@ -2,7 +2,7 @@
 
 Junior-level prototype for the **DE Technical Challenge**.
 
-**Status:** Phases 0–1 complete (data exploration + schema design). ETL and analytics are next.
+**Status:** Phases 0–2 complete (exploration, schema, ETL). Phase 3 (multi-source) is next.
 
 **Primary dataset:** [Option 2 — All Clinical Trials (Kaggle)](https://www.kaggle.com/datasets/skylord/all-clinical-trials)
 
@@ -22,8 +22,10 @@ python src/explore_data.py --sample-size 300
 
 # Phase 1: create empty database tables
 python -m src.init_db
-# or
-python -m src.run_pipeline
+
+# Phase 2: load XML data into database
+python -m src.run_pipeline --max-studies 500
+python -m src.run_pipeline --fixtures   # quick demo: 2 studies
 
 # Run tests
 pytest -q
@@ -37,7 +39,7 @@ pytest -q
 |-------|-------------|--------|
 | 0 | Data exploration | **Done** |
 | 1 | Schema design | **Done** |
-| 2 | ETL (parse, clean, load) | Planned |
+| 2 | ETL (parse, clean, load) | **Done** |
 | 3 | Multi-source (CSV, API, SQL) | Planned |
 | 4 | Validation & tests | Planned |
 | 5 | Analytics SQL | Planned |
@@ -83,6 +85,38 @@ pytest tests/test_schema.py -q
 
 ---
 
+## Phase 2: ETL pipeline (completed)
+
+Loads XML trial data into the normalized SQLite tables.
+
+```
+XML (zip or fixtures)  →  Extract  →  Clean  →  Validate  →  Load  →  trials.db
+                                              ↓
+                                    data/quarantine/ (rejected rows)
+```
+
+| Step | File | What it does |
+|------|------|--------------|
+| Extract | `src/ingest/xml_parser.py` | Parse one XML file |
+| Extract | `src/ingest/xml_ingest.py` | Read from zip or fixtures |
+| Transform | `src/transform/clean.py` | Normalize dates, phases |
+| Transform | `src/transform/validate.py` | Reject bad rows; quarantine CSV |
+| Load | `src/load/loader.py` | Insert into 4 tables |
+| Orchestrate | `src/pipeline.py` | Runs all steps |
+| CLI | `src/run_pipeline.py` | Entry point |
+
+### Validation rules
+
+| Rule | Action |
+|------|--------|
+| Missing `nct_id` or `title` | Reject → quarantine |
+| Invalid `nct_id` format | Reject |
+| Empty phase | Map to `Unknown` |
+| Bad/missing dates | Set NULL |
+| Duplicate `nct_id` | Keep latest |
+
+---
+
 ## Repository structure
 
 ```
@@ -90,16 +124,26 @@ src/
   explore_data.py       # Phase 0
   config.py
   init_db.py            # Phase 1
-  run_pipeline.py       # runs init_db
+  pipeline.py           # Phase 2 orchestrator
+  run_pipeline.py       # Phase 2 CLI
+  ingest/
+    xml_parser.py
+    xml_ingest.py
+  transform/
+    clean.py
+    validate.py
+  load/
+    loader.py
   db/
     schema.sql
     connection.py
 tests/
   fixtures/
   test_schema.py
-PLAN.md
-IMPLEMENTATION.md
-ppt.md
+  test_xml_parser.py
+  test_clean.py
+  test_validate.py
+  test_pipeline.py
 ```
 
 ---
