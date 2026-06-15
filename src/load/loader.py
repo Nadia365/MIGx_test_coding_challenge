@@ -1,20 +1,11 @@
 """
-Load validated study records into SQLite.
+Insert validated study records into SQLite.
 """
 
-import sqlite3
-
-
-def _delete_children(conn: sqlite3.Connection, nct_id: str) -> None:
-    """Remove old child rows before re-inserting (handles reloads)."""
-    for table in ("study_conditions", "study_interventions", "study_locations"):
-        conn.execute(f"DELETE FROM {table} WHERE nct_id = ?", (nct_id,))
-
-
-def load_records(conn: sqlite3.Connection, records: list[dict]) -> dict[str, int]:
+def load_records(conn, records):
     """
-    Insert or replace studies and their child rows.
-    Returns row counts per table for this batch.
+    Save studies and their child rows to the database.
+    Returns how many rows were written in this batch.
     """
     counts = {
         "studies": 0,
@@ -23,19 +14,18 @@ def load_records(conn: sqlite3.Connection, records: list[dict]) -> dict[str, int
         "study_locations": 0,
     }
 
-    study_sql = """
-        INSERT OR REPLACE INTO studies (
-            nct_id, title, study_type, phase, status,
-            start_date, completion_date, enrollment, source_file
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """
-
     for record in records:
         study = record["study"]
         nct_id = study["nct_id"]
 
+        # Upsert main study row
         conn.execute(
-            study_sql,
+            """
+            INSERT OR REPLACE INTO studies (
+                nct_id, title, study_type, phase, status,
+                start_date, completion_date, enrollment, source_file
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             (
                 nct_id,
                 study["title"],
@@ -50,7 +40,10 @@ def load_records(conn: sqlite3.Connection, records: list[dict]) -> dict[str, int
         )
         counts["studies"] += 1
 
-        _delete_children(conn, nct_id)
+        # Remove old child rows (in case we reload this study)
+        conn.execute("DELETE FROM study_conditions WHERE nct_id = ?", (nct_id,))
+        conn.execute("DELETE FROM study_interventions WHERE nct_id = ?", (nct_id,))
+        conn.execute("DELETE FROM study_locations WHERE nct_id = ?", (nct_id,))
 
         for cond in record.get("conditions", []):
             conn.execute(
@@ -61,17 +54,21 @@ def load_records(conn: sqlite3.Connection, records: list[dict]) -> dict[str, int
 
         for inter in record.get("interventions", []):
             conn.execute(
-                """INSERT INTO study_interventions
-                   (nct_id, intervention_name, intervention_type)
-                   VALUES (?, ?, ?)""",
+                """
+                INSERT INTO study_interventions
+                    (nct_id, intervention_name, intervention_type)
+                VALUES (?, ?, ?)
+                """,
                 (nct_id, inter["intervention_name"], inter.get("intervention_type")),
             )
             counts["study_interventions"] += 1
 
         for loc in record.get("locations", []):
             conn.execute(
-                """INSERT INTO study_locations (nct_id, country, city, state)
-                   VALUES (?, ?, ?, ?)""",
+                """
+                INSERT INTO study_locations (nct_id, country, city, state)
+                VALUES (?, ?, ?, ?)
+                """,
                 (nct_id, loc.get("country"), loc.get("city"), loc.get("state")),
             )
             counts["study_locations"] += 1

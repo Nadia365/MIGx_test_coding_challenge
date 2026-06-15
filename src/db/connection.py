@@ -1,30 +1,26 @@
 """
-SQLite database helpers.
-
-Creates the database file and applies schema.sql.
+Open the SQLite database and create tables from schema.sql.
 """
 
 import sqlite3
 from pathlib import Path
 
-from src.config import DB_PATH, DATA_DIR, SCHEMA_PATH
+from src.config import DB_PATH, SCHEMA_PATH
 
 
-def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
-    """Open a connection to the trials database."""
+def get_connection(db_path=None):
+    """Open a connection to trials.db."""
     path = Path(db_path) if db_path else DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
+
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
-def init_database(db_path: Path | str | None = None, schema_path: Path | str | None = None) -> Path:
-    """
-    Create tables and indexes from schema.sql.
-    Safe to run multiple times (uses IF NOT EXISTS).
-    """
+def init_database(db_path=None, schema_path=None):
+    """Create tables from schema.sql (safe to run more than once)."""
     db = Path(db_path) if db_path else DB_PATH
     schema = Path(schema_path) if schema_path else SCHEMA_PATH
 
@@ -42,8 +38,8 @@ def init_database(db_path: Path | str | None = None, schema_path: Path | str | N
     return db
 
 
-def list_tables(db_path: Path | str | None = None) -> list[str]:
-    """Return table names in the database (useful for tests)."""
+def list_tables(db_path=None):
+    """Return table names (used in tests)."""
     conn = get_connection(db_path)
     try:
         cur = conn.execute(

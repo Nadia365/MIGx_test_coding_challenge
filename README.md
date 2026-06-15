@@ -2,34 +2,117 @@
 
 Junior-level prototype for the **DE Technical Challenge**.
 
-**Status:** Phases 0–2 complete (exploration, schema, ETL). Phase 5 validation & tests **Done**. Phase 3 (multi-source) is next.
+**Status:** Core pipeline complete (exploration → schema → ETL → validation → analytics → Docker). Multi-source connectors (CSV/API/SQL) planned as optional enhancement.
 
 **Primary dataset:** [Option 2 — All Clinical Trials (Kaggle)](https://www.kaggle.com/datasets/skylord/all-clinical-trials)
 
-**Local data:** `sample_data/archive.zip.download/archive.zip` (~103,509 ClinicalTrials.gov XML files)
+**Local data:** `sample_data/archive.zip.download/archive.zip` (~103,509 ClinicalTrials.gov XML files, May 2020 snapshot). Not committed to git — download separately from Kaggle.
 
 ---
 
-## Quick start
+## Quick start (local)
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Phase 0: explore a sample of the XML data
+# Explore sample XML
 python src/explore_data.py --sample-size 300
 
-# Phase 1: create empty database tables
+# Create DB + run ETL (requires zip, or use --fixtures)
 python -m src.init_db
+python -m src.run_pipeline --max-studies 500 --report
+python -m src.run_pipeline --fixtures --report   # no zip needed (2 studies)
 
-# Phase 2: load XML data into database
-python -m src.run_pipeline --max-studies 500
-python -m src.run_pipeline --fixtures   # quick demo: 2 studies
-
-# Run tests
+# Tests
 pytest -q
 ```
+
+---
+
+## Quick start (Docker)
+
+One command — runs tests, loads trials, and prints the analytics report:
+
+```bash
+docker compose up --build
+```
+
+**Set how many trials to load** (when the zip is mounted):
+
+```bash
+MAX_STUDIES=100 docker compose up --build
+```
+
+Or edit `MAX_STUDIES` in `docker-compose.yml`:
+
+```yaml
+environment:
+  MAX_STUDIES: ${MAX_STUDIES:-500}   # change 500 to whatever you want
+```
+
+- **Without zip:** uses `tests/fixtures/` (2 sample studies) automatically.
+- **With zip:** uncomment the volume in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./sample_data/archive.zip.download:/app/sample_data/archive.zip.download:ro
+```
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph sources [Sources]
+        XML["XML zip / fixtures"]
+    end
+
+    subgraph extract [Extract]
+        parser[xml_parser.py]
+        ingest[xml_ingest.py]
+    end
+
+    subgraph transform [Transform]
+        clean[clean.py]
+        validate[validate.py]
+    end
+
+    subgraph load [Load]
+        loader[loader.py]
+    end
+
+    subgraph warehouse [Warehouse]
+        DB[(trials.db)]
+    end
+
+    subgraph analytics [Analytics]
+        sql[queries.sql]
+        report[report.py]
+    end
+
+    quarantine[(quarantine CSV)]
+
+    XML --> ingest --> parser
+    parser --> clean --> validate
+    validate -->|invalid| quarantine
+    validate -->|valid| loader --> DB
+    DB --> sql --> report
+```
+
+**Flow:** XML → parse → clean → validate → load → SQLite → SQL analytics report.
+
+| Layer | Files | Role |
+|-------|-------|------|
+| Config | `src/config.py` | Paths, `MAX_STUDIES` cap |
+| Extract | `src/ingest/` | Read zip/fixtures, parse XML |
+| Transform | `src/transform/` | Normalize dates/phases; reject bad rows |
+| Load | `src/load/loader.py` | Upsert into 4 normalized tables |
+| Orchestrate | `src/pipeline.py`, `run_pipeline.py` | E-T-L runner + CLI |
+| Analytics | `src/analytics/` | 5 business SQL queries + report |
+| Database | `src/db/schema.sql` | DDL, indexes, foreign keys |
 
 ---
 
@@ -42,104 +125,123 @@ pytest -q
 | 2 | ETL (parse, clean, load) | **Done** |
 | 3 | Multi-source (CSV, API, SQL) | Planned |
 | 4 | Validation & tests | **Done** |
-| 5 | Analytics SQL | Planned |
-| 6 | Docker & submission | Planned |
+| 5 | Analytics SQL | **Done** |
+| 6 | Docker & docs | **Done** |
 
-See [PLAN.md](PLAN.md), [IMPLEMENTATION.md](IMPLEMENTATION.md), and [ppt.md](ppt.md) for details.
-
----
-
-## Phase 0: Data exploration
-
-- Script: `src/explore_data.py`
-- Sample fixtures: `tests/fixtures/NCT00000102.xml`, `NCT00000125.xml`
-
-Key findings (300-study sample): multi-condition trials (~37%), missing completion dates (~31%), text date formats, 103k XML files total.
+See [STORY.md](STORY.md) (interview narrative), [PLAN.md](PLAN.md), [IMPLEMENTATION.md](IMPLEMENTATION.md), and [ppt.md](ppt.md) for phase-by-phase notes.
 
 ---
 
-## Phase 1: Schema design
+## Database schema
 
-- DDL: `src/db/schema.sql`
-- DB helpers: `src/db/connection.py`
-- Config: `src/config.py`
-- Init CLI: `python -m src.init_db`
-- Database file: `data/processed/trials.db` (created locally, gitignored)
-
-### Tables
+Four normalized tables (one study → many conditions/interventions/locations):
 
 | Table | Purpose |
 |-------|---------|
-| `studies` | One row per trial (`nct_id` primary key) |
+| `studies` | One row per trial (`nct_id` PK) |
 | `study_conditions` | Diseases/conditions per trial |
 | `study_interventions` | Drugs/treatments per trial |
 | `study_locations` | Cities/countries per trial |
 
-### Verify tables
-
 ```bash
 python -m src.init_db
 sqlite3 data/processed/trials.db ".tables"
-pytest tests/test_schema.py -q
 ```
 
 ---
 
-## Phase 2: ETL pipeline (completed)
-
-Loads XML trial data into the normalized SQLite tables.
+## ETL & validation
 
 ```
-XML (zip or fixtures)  →  Extract  →  Clean  →  Validate  →  Load  →  trials.db
-                                              ↓
-                                    data/quarantine/ (rejected rows)
+XML  →  Extract  →  Clean  →  Validate  →  Load  →  trials.db
+                              ↓
+                    data/quarantine/rejected_studies.csv
 ```
-
-| Step | File | What it does |
-|------|------|--------------|
-| Extract | `src/ingest/xml_parser.py` | Parse one XML file |
-| Extract | `src/ingest/xml_ingest.py` | Read from zip or fixtures |
-| Transform | `src/transform/clean.py` | Normalize dates, phases |
-| Transform | `src/transform/validate.py` | Reject bad rows; quarantine CSV |
-| Load | `src/load/loader.py` | Insert into 4 tables |
-| Orchestrate | `src/pipeline.py` | Runs all steps |
-| CLI | `src/run_pipeline.py` | Entry point |
-
-### Validation rules
 
 | Rule | Action |
 |------|--------|
 | Missing `nct_id` or `title` | Reject → quarantine |
 | Invalid `nct_id` format | Reject |
+| `start_date` after `completion_date` | Reject |
+| Malformed XML | Reject (parse error) |
 | Empty phase | Map to `Unknown` |
-| Bad/missing dates | Set NULL |
+| Bad dates | Set NULL + log |
 | Duplicate `nct_id` | Keep latest |
-| `start_date` after `completion_date` | Reject → quarantine |
-| Malformed XML | Reject → quarantine (parse error) |
-| Empty condition/intervention/location | Skip child row only |
+
+```bash
+pytest -q   # 22 tests
+```
 
 ---
 
-## Phase 5: Validation & tests (completed)
+## Analytics (5 required queries)
 
-Validation rules live in `src/transform/validate.py`. Rejected rows go to `data/quarantine/rejected_studies.csv`.
+| # | Question | File |
+|---|----------|------|
+| 1 | Trials by study type and phase | `queries.sql` |
+| 2 | Most common conditions (top 10) | |
+| 3 | Interventions with highest completion rates | |
+| 4 | Geographic distribution | |
+| 5 | Average study duration by phase | |
 
-### Test suite
+**Completion rate formula:**
 
-```bash
-pytest -q   # 19 tests
+```
+completion_rate = COUNT(studies where status='Completed' AND has intervention X)
+                  / COUNT(studies with intervention X)
 ```
 
-| Test file | What it covers |
-|-----------|----------------|
-| `test_schema.py` | Tables created correctly |
-| `test_xml_parser.py` | XML field extraction |
-| `test_xml_ingest.py` | Folder/zip read + parse error handling |
-| `test_clean.py` | Date/phase/enrollment cleaning |
-| `test_validate.py` | Rules, quarantine CSV, child row filtering |
-| `test_pipeline.py` | End-to-end ETL + quarantine integration |
+```bash
+python -m src.analytics.report
+python -m src.run_pipeline --max-studies 500 --report
+```
 
-Bad-data fixtures for validation tests: `tests/fixtures_validation/` (malformed XML, missing title, bad NCT ID, reversed dates).
+---
+
+## Design decisions & trade-offs
+
+| Decision | Choice | Trade-off |
+|----------|--------|-----------|
+| Dataset | Option 2 — All Clinical Trials | Large archive; we cap at `MAX_STUDIES=500` for dev/Docker speed |
+| Raw format | XML bulk (actual Kaggle download) | Harder than CSV but matches real ClinicalTrials.gov exports |
+| Schema | 4 normalized tables | More joins than one flat table, but correct counts for multi-condition trials |
+| Database | SQLite | Zero setup for reviewers; Postgres would scale better in production |
+| Orchestration | Python CLI | No Airflow — simpler for a time-boxed challenge |
+| Quarantine | CSV file for rejects | Easy to inspect; not a full dead-letter queue service |
+| Docker default | Fixtures if no zip | Works without 2.8 GB download; mount zip for full subset load |
+
+---
+
+## Time log (approximate)
+
+| Phase | Work | Time |
+|-------|------|------|
+| 0 | Data exploration, fixtures, findings | ~1 h |
+| 1 | Schema design, init_db, tests | ~45 min |
+| 2 | ETL modules + pipeline orchestrator | ~1 h |
+| 4 | Validation rules, quarantine, 22 tests | ~45 min |
+| 5 | 5 SQL queries + report module | ~30 min |
+| 6 | Docker, README expansion | ~30 min |
+| **Total** | | **~4 h** |
+
+---
+
+## Bonus Q&A (challenge follow-ups)
+
+**1. How would you scale this 100x?**  
+Parallelize XML parsing (multiprocessing), partition by NCT prefix, move warehouse to Postgres or Snowflake, store raw zip in S3, incremental API sync for updates instead of full bulk reload.
+
+**2. How do you ensure data quality?**  
+NCT ID regex validation, required fields, start ≤ completion check, parse-error quarantine, empty child-row filtering, duplicate `nct_id` handling, and pytest on fixture + bad-data files.
+
+**3. What about GxP / regulated environments?**  
+Add audit trails (who loaded what, when), validated ETL (IQ/OQ/PQ), immutable raw landing zone, RBAC on DB, change control on schema migrations. This public registry has no patient PHI.
+
+**4. How would you monitor the pipeline?**  
+Log row counts per stage, quarantine rate, ingest duration, alert if study count drops vs prior run, freshness SLA on API source.
+
+**5. Security considerations?**  
+Encrypt data at rest/transit in production, secrets via env vars (not in git), least-privilege DB access. ClinicalTrials.gov public data — no PHI in this dataset.
 
 ---
 
@@ -147,48 +249,29 @@ Bad-data fixtures for validation tests: `tests/fixtures_validation/` (malformed 
 
 ```
 src/
-  explore_data.py       # Phase 0
+  explore_data.py
   config.py
-  init_db.py            # Phase 1
-  pipeline.py           # Phase 2 orchestrator
-  run_pipeline.py       # Phase 2 CLI
-  ingest/
-    xml_parser.py
-    xml_ingest.py
-  transform/
-    clean.py
-    validate.py
-  load/
-    loader.py
-  db/
-    schema.sql
-    connection.py
+  init_db.py
+  pipeline.py
+  run_pipeline.py
+  ingest/          xml_parser.py, xml_ingest.py
+  transform/       clean.py, validate.py
+  load/            loader.py
+  analytics/       queries.sql, report.py
+  db/              schema.sql, connection.py
 tests/
-  fixtures/
-  fixtures_validation/   # bad XML for validation tests
-  conftest.py
-  test_schema.py
-  test_xml_parser.py
-  test_xml_ingest.py
-  test_clean.py
-  test_validate.py
-  test_pipeline.py
+  fixtures/        good XML samples
+  fixtures_validation/   bad XML for validation tests
+docker/
+  entrypoint.sh
+Dockerfile
+docker-compose.yml
 ```
-
----
-
-## Design decisions
-
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Dataset | Option 2 — All Clinical Trials | Comprehensive registry |
-| Raw format | XML bulk archive | Actual Kaggle download |
-| Schema | 4 normalized tables | Multi-value fields in exploration |
-| Database | SQLite | Simple local setup for reviewers |
 
 ---
 
 ## References
 
 - Dataset: https://www.kaggle.com/datasets/skylord/all-clinical-trials
-- Reviewer GitHub (if private): `MIGx-user`
+- ClinicalTrials.gov: https://clinicaltrials.gov
+- Reviewer GitHub (if private repo): `MIGx-user`

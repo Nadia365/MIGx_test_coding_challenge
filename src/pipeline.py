@@ -1,12 +1,8 @@
 """
-ETL pipeline: Extract XML -> Transform -> Load into SQLite.
+Main ETL pipeline: Extract -> Transform -> Load.
 
-Orchestrator: runs Extract, Transform (clean + validate), and Load in order.
+This file ties the steps together in order.
 """
-
-import logging
-import time
-from pathlib import Path
 
 from src.config import DB_PATH, MAX_STUDIES
 from src.db.connection import get_connection, init_database
@@ -15,57 +11,42 @@ from src.load.loader import load_records
 from src.transform.clean import clean_record
 from src.transform.validate import validate_records, write_quarantine
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
 
-
-def run_etl(
-    source_path: Path | None = None,
-    fixtures_folder: Path | None = None,
-    max_studies: int | None = None,
-    db_path: Path | None = None,
-) -> dict:
+def run_etl(source_path=None, fixtures_folder=None, max_studies=None, db_path=None):
     """
-    Run extract, transform, and load.
+    Run the full pipeline.
 
-    Use fixtures_folder for tests; otherwise reads from the zip file.
+    fixtures_folder -> use test XML files (for tests / Docker demo)
+    otherwise       -> read from the Kaggle zip
     """
     limit = max_studies if max_studies is not None else MAX_STUDIES
-    t0 = time.perf_counter()
+    target_db = db_path or DB_PATH
 
-    # --- Extract ---
-    logger.info("STEP 1/3 EXTRACT — reading XML files")
+    # --- Step 1: Extract ---
+    print("STEP 1/3 EXTRACT — reading XML files")
     if fixtures_folder:
-        logger.info("  source: fixtures folder %s", fixtures_folder)
+        print(f"  source: {fixtures_folder}")
         raw_records, parse_errors = extract_from_folder(fixtures_folder)
     else:
-        logger.info("  source: zip archive (max=%s studies)", limit)
+        print(f"  source: zip (max {limit} studies)")
         raw_records, parse_errors = extract_from_path(source_path, max_studies=limit)
 
-    logger.info("  extracted %s records (%s parse errors)", len(raw_records), len(parse_errors))
+    print(f"  extracted {len(raw_records)} records, {len(parse_errors)} parse errors")
 
-    # --- Transform: clean + validate ---
-    logger.info("STEP 2/3 TRANSFORM — clean and validate")
-    cleaned = [clean_record(r) for r in raw_records]
-    logger.info("  cleaned %s records", len(cleaned))
+    # --- Step 2: Transform ---
+    print("STEP 2/3 TRANSFORM — clean and validate")
+    cleaned = []
+    for record in raw_records:
+        cleaned.append(clean_record(record))
 
     valid, invalid = validate_records(cleaned)
     all_rejected = invalid + parse_errors
     quarantine_path = write_quarantine(all_rejected)
 
-    logger.info(
-        "  valid: %s | rejected: %s (validation: %s, parse errors: %s)",
-        len(valid),
-        len(all_rejected),
-        len(invalid),
-        len(parse_errors),
-    )
-    if quarantine_path:
-        logger.info("  quarantine file: %s", quarantine_path)
+    print(f"  valid: {len(valid)}, rejected: {len(all_rejected)}")
 
-    # --- Load ---
-    logger.info("STEP 3/3 LOAD — writing to SQLite")
-    target_db = db_path or DB_PATH
+    # --- Step 3: Load ---
+    print("STEP 3/3 LOAD — writing to SQLite")
     init_database(db_path=target_db)
     conn = get_connection(target_db)
     try:
@@ -74,10 +55,7 @@ def run_etl(
         conn.close()
 
     for table, count in counts.items():
-        logger.info("  %s: %s rows inserted/updated", table, count)
-
-    elapsed = time.perf_counter() - t0
-    logger.info("Pipeline finished in %.1f seconds", elapsed)
+        print(f"  {table}: {count} rows")
 
     return {
         "extracted": len(raw_records),
@@ -87,5 +65,4 @@ def run_etl(
         "validation_rejected": len(invalid),
         "quarantine_file": str(quarantine_path) if quarantine_path else None,
         "loaded": counts,
-        "elapsed_seconds": round(elapsed, 1),
     }

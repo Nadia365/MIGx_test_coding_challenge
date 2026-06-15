@@ -1,0 +1,21 @@
+# Clinical Trial Pipeline — Docker Compose
+#
+# Run:
+#   docker compose up --build
+#
+# Set how many trials to load from the zip:
+#   MAX_STUDIES=100 docker compose up --build
+#
+# Or edit MAX_STUDIES below (default 500).
+
+services:
+  trials:
+    build: .
+    environment:
+      # Number of trials to load from the zip (when zip is mounted)
+      MAX_STUDIES: ${MAX_STUDIES:-500}
+      RUN_TESTS: ${RUN_TESTS:-1}
+    volumes:
+      - ./data:/app/data
+      # Uncomment if you have the Kaggle zip locally (~2.8 GB):
+      - ./sample_data/archive.zip.download:/app/sample_data/archive.zip.download:ro
