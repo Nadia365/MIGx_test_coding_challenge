@@ -137,8 +137,6 @@ Completion rate = completed studies with intervention X / all studies with inter
 
 **Security?** Encryption, secrets in a vault, RBAC. Again — public data in this project.
 
-More detail in [STORY.md](STORY.md) and [IMPLEMENTATION.md](IMPLEMENTATION.md).
-
 ---
 
 ## Project layout
