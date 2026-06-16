@@ -258,6 +258,70 @@ Queries live in `src/analytics/queries.sql`; `report.py` runs them and prints fo
 
 ---
 
+## Design decisions
+
+Why I built it this way:
+
+- **Explored the data first** — I sampled 300 XML files before designing tables. Many trials have more than one condition, so a flat table would give wrong counts.
+- **Read files inside the zip** — The dataset is huge (~103k files). Reading from the zip avoids extracting everything to disk.
+- **Four linked tables** — One row per study, with separate tables for conditions, drugs, and locations. Keeps counts correct when a trial has many values.
+- **SQLite** — No server to install. Reviewers can run it locally with one command.
+- **Simple Python CLI** — Enough for this challenge. No Airflow or Kubernetes needed.
+- **Quarantine file for bad rows** — Failed records go to a CSV so you can see what went wrong.
+- **SQL in its own file** — Analytics queries are easy to read and review in `queries.sql`.
+- **Fixtures when no zip** — Docker and tests work without downloading the full dataset.
+- **`MAX_STUDIES` cap** — Default 500 keeps runs fast. Full load is optional.
+
+---
+
+## Trade-offs and limitations
+
+What this prototype does *not* do (on purpose):
+
+- **Size** — SQLite and single-process Python are fine for demos, not for millions of rows or many users at once.
+- **Data freshness** — Bulk XML from a 2020 snapshot, not a live API feed.
+- **Scheduling** — Run manually via CLI; no automatic daily jobs or retries.
+- **Validation** — Basic rules only — no fancy data-quality framework.
+- **Dates** — Some dates are messy text; partial dates may lose day-level detail.
+- **Sources** — XML only for now. CSV, API, and SQL connectors are planned but not built yet.
+- **Tests** — 22 unit tests on small fixtures, not a full run on 103k files.
+- **Security** — Public registry data only. No PHI, encryption, or access controls in this version.
+
+---
+
+## Time allocation
+
+Work spread over **three days**:
+
+| Day | What |
+|-----|------|
+| **Day 1** | Explore the XML data, save test fixtures, design the database schema |
+| **Day 2** | Build the ETL pipeline, add validation rules, quarantine, and tests |
+| **Day 3** | Write the five SQL queries, set up Docker, finish README and docs |
+
+Phase 3 (CSV / API / SQL connectors) was left as optional and is not included above.
+
+---
+
+## Future improvements
+
+**Soon**
+
+- Add CSV, API, and SQL data sources (same pipeline after ingest)
+- Document fields and where data comes from
+- Stronger automated quality checks
+- Incremental updates instead of full reloads
+
+**At larger scale**
+
+- Move to Postgres or Snowflake
+- Store raw XML in cloud storage (e.g. S3)
+- Parse files in parallel (multiprocessing or Spark)
+- Use Airflow or Prefect for scheduling
+- Use dbt for transforms and versioned analytics
+
+---
+
 ## Challenge follow-up questions
 
 ### 1. Scalability — How would you handle 100x more data volume?
