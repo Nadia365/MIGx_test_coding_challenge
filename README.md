@@ -258,25 +258,6 @@ Queries live in `src/analytics/queries.sql`; `report.py` runs them and prints fo
 
 ---
 
-## Future improvements and scalability
-
-**Near-term enhancements**
-
-- Multi-source connectors: CSV export, ClinicalTrials.gov API v2, SQL staging DB
-- Data dictionary and field-level lineage documentation
-- Great Expectations or dbt tests for automated quality checks
-- Incremental loads (track `last_update_posted_date` per study)
-
-**Production-scale path**
-
-- Move warehouse to Postgres or Snowflake
-- Store raw XML in S3 with partitioned prefixes (e.g. by NCT ID)
-- Parallelize parsing with multiprocessing or Spark
-- Replace CLI with Airflow/Prefect for scheduling and retries
-- Add dbt for transform layer and versioned analytics models
-
----
-
 ## Challenge follow-up questions
 
 ### 1. Scalability — How would you handle 100x more data volume?
