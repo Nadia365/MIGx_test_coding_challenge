@@ -111,9 +111,9 @@ Completion rate = completed studies with intervention X / all studies with inter
 
 ## Design notes
 
-- Sampled ~300 XML files before designing schema — lots of trials have multiple conditions
+- Sampled ~300 XML files before designing schema : lots of trials have multiple conditions
 - Read from zip directly instead of extracting 103k files
-- SQLite + plain Python CLI — easy to run locally, not meant for production scale
+- SQLite + plain Python CLI : easy to run locally, not meant for production scale
 - Quarantine CSV so you can see what failed
 - `MAX_STUDIES=500` by default so dev runs stay fast
 
@@ -131,11 +131,11 @@ Completion rate = completed studies with intervention X / all studies with inter
 
 **More data quality?** Stricter enums on status/phase, reject incomplete studies, range checks on enrollment, Great Expectations-style checks.
 
-**GxP?** Audit logs, validated deployments, schema change control. This data is public registry stuff — no PHI here.
+**GxP?** Audit logs, validated deployments, schema change control. This data is public registry stuff.
 
 **Monitoring?** Row counts per stage, alert if quarantine rate spikes, track data freshness vs source.
 
-**Security?** Encryption, secrets in a vault, RBAC. Again — public data in this project.
+**Security?** Encryption, secrets in a vault, RBAC. Again, public data in this project.
 
 ---
 
